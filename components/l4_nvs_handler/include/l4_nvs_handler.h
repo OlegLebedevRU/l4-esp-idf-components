@@ -113,7 +113,7 @@ typedef struct {
  * @brief Backend callbacks for low-level NVS operations.
  *
  * Downstream projects implement these to wire the handler to their concrete
- * NVS layer (e.g. leo4_nvs.c, siplite nvs driver, etc.) without introducing
+ * NVS layer (e.g. project_nvs.c, application NVS driver, etc.) without introducing
  * app-specific includes into this component.
  *
  * All callbacks receive the opaque @p ctx pointer registered in the struct.

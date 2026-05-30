@@ -87,7 +87,7 @@ static l4_nvs_handler_partition_t infer_partition(const char *namespace_name)
  *   - cJSON_IsString items  (strtol / strtoul parse)
  *
  * Using a local stack buffer avoids the malloc(32) leak present in the
- * original leo4_nvs_handler code path.
+ * original implementation's code path.
  *
  * @return true on success, false if the value cannot be parsed.
  */
@@ -347,7 +347,7 @@ l4_nvs_handler_error_t l4_nvs_handler_validate_and_parse_record(
     } else {
         /* Numeric type: accept JSON number or numeric string.
          * Use a local stack buffer — no heap allocation needed — to avoid
-         * the malloc(32) leak present in the original leo4_nvs_handler. */
+         * the malloc(32) leak present in the original implementation. */
         int32_t num = 0;
         if (!parse_numeric_value(v_json, &num)) {
             return L4_NVS_HANDLER_ERR_INVALID_VALUE;

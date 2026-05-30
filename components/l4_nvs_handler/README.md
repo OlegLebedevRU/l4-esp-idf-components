@@ -124,7 +124,7 @@ void app_main(void)
 A **namespace materializer** is a callback that populates NVS defaults for a
 specific namespace before the first GET or SET operation.  This replaces the
 app-specific namespace knowledge that was previously hardcoded in
-`leo4_nvs_handler`.
+previous implementations.
 
 ```c
 static esp_err_t my_cfg_wifi_materialize(void *ctx)
@@ -189,7 +189,7 @@ idf_component_register(
 - MQTT client or topic subscription/publish
 - Task or message-queue parsers
 - Any app-specific namespace names, defaults, or schemas
-- `leo4_nvs.h`, `l4_cfg_repo.h`, `microback_client.h`, or any project-specific header
+- Any project-specific headers (e.g. application NVS drivers, config repo headers, or third-party client headers)
 
 ---
 
