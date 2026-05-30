@@ -24,11 +24,14 @@
 
 static const char *TAG = "l4_nvs_store";
 
+/* Total number of logical partitions */
+#define L4_NVS_STORE_PARTITION_COUNT  4u
+
 /* =========================================================================
  * Partition labels (Kconfig-configurable, defaults: fctry / cfg / db1 / log)
  * ========================================================================= */
 
-static const char *const s_part_labels[4] = {
+static const char *const s_part_labels[L4_NVS_STORE_PARTITION_COUNT] = {
     [L4_NVS_HANDLER_PART_FACTORY] = CONFIG_L4_NVS_STORE_PART_LABEL_FACTORY,
     [L4_NVS_HANDLER_PART_CFG]     = CONFIG_L4_NVS_STORE_PART_LABEL_CFG,
     [L4_NVS_HANDLER_PART_DB]      = CONFIG_L4_NVS_STORE_PART_LABEL_DB,
@@ -36,15 +39,23 @@ static const char *const s_part_labels[4] = {
 };
 
 /* =========================================================================
- * Mutex
+ * Mutex — thread-safe lazy init using a portMUX spinlock + static storage
  * ========================================================================= */
 
+static StaticSemaphore_t s_mutex_buf;
 static SemaphoreHandle_t s_mutex = NULL;
+static portMUX_TYPE      s_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
 static void ensure_mutex(void)
 {
+    /* Double-checked init protected by a spinlock so the allocation happens
+     * at most once, even if two tasks call this simultaneously. */
     if (s_mutex == NULL) {
-        s_mutex = xSemaphoreCreateMutex();
+        portENTER_CRITICAL(&s_spinlock);
+        if (s_mutex == NULL) {
+            s_mutex = xSemaphoreCreateMutexStatic(&s_mutex_buf);
+        }
+        portEXIT_CRITICAL(&s_spinlock);
     }
 }
 
@@ -153,7 +164,7 @@ static esp_err_t open_namespace_locked(l4_nvs_handler_partition_t partition,
 
 const char *l4_nvs_store_partition_label(l4_nvs_handler_partition_t partition)
 {
-    if ((unsigned)partition >= 4u) {
+    if ((unsigned)partition >= L4_NVS_STORE_PARTITION_COUNT) {
         return NULL;
     }
     return s_part_labels[partition];
@@ -185,7 +196,7 @@ esp_err_t l4_nvs_store_partition_from_str(const char *str,
     }
 
     /* Fall back: check against Kconfig-derived labels */
-    for (unsigned i = 0; i < 4u; i++) {
+    for (unsigned i = 0; i < L4_NVS_STORE_PARTITION_COUNT; i++) {
         if (strcmp(str, s_part_labels[i]) == 0) {
             *out_partition = (l4_nvs_handler_partition_t)i;
             return ESP_OK;
@@ -201,7 +212,7 @@ esp_err_t l4_nvs_store_partition_from_str(const char *str,
 
 esp_err_t l4_nvs_store_init_partition(l4_nvs_handler_partition_t partition)
 {
-    if ((unsigned)partition >= 4u) {
+    if ((unsigned)partition >= L4_NVS_STORE_PARTITION_COUNT) {
         return ESP_ERR_INVALID_ARG;
     }
     if (!store_lock()) {
@@ -509,6 +520,7 @@ static bool append_entry(cJSON *arr,
         case NVS_TYPE_I16: { int16_t  v = 0; read_err = nvs_get_i16(h, info->key, &v); num = (double)v; } break;
         case NVS_TYPE_U16: { uint16_t v = 0; read_err = nvs_get_u16(h, info->key, &v); num = (double)v; } break;
         case NVS_TYPE_I32: { int32_t  v = 0; read_err = nvs_get_i32(h, info->key, &v); num = (double)v; } break;
+        /* All uint32_t values fit exactly in double (53-bit mantissa; 2^32 < 2^53). */
         case NVS_TYPE_U32: { uint32_t v = 0; read_err = nvs_get_u32(h, info->key, &v); num = (double)v; } break;
         default: break;
         }
