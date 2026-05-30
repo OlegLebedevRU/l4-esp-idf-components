@@ -10,3 +10,46 @@ menu "L4 NVS Handler"
             Increase this value if more than 8 namespace materializers are needed.
 
 endmenu
+
+menu "L4 NVS Store"
+
+    config L4_NVS_STORE_PART_LABEL_FACTORY
+        string "Factory partition NVS label"
+        default "fctry"
+        help
+            Flash partition label for the factory (read-only defaults) NVS
+            partition. Must match the label in the partition table CSV.
+
+    config L4_NVS_STORE_PART_LABEL_CFG
+        string "Config partition NVS label"
+        default "cfg"
+        help
+            Flash partition label for the user configuration NVS partition.
+            Must match the label in the partition table CSV.
+
+    config L4_NVS_STORE_PART_LABEL_DB
+        string "Database partition NVS label"
+        default "db1"
+        help
+            Flash partition label for the runtime database NVS partition.
+            Must match the label in the partition table CSV.
+
+    config L4_NVS_STORE_PART_LABEL_LOG
+        string "Log partition NVS label"
+        default "log"
+        help
+            Flash partition label for the logging/audit NVS partition.
+            Must match the label in the partition table CSV.
+
+    config L4_NVS_STORE_MAX_ENTRIES
+        int "Maximum NVS entries processed per JSON dump"
+        default 512
+        range 1 4096
+        help
+            Upper bound on the number of NVS key/value entries included in a
+            single l4_nvs_store_get_json() call. Entries beyond this limit are
+            silently truncated. Increase if namespaces contain more than 512
+            entries; decrease to reduce stack/heap pressure on constrained
+            devices.
+
+endmenu

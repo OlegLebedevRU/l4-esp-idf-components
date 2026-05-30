@@ -15,6 +15,11 @@ provides a single, transport-agnostic implementation of:
 - HTTP and MQTT status-code helpers
 - MQTT `/res`-compatible error JSON formatting
 
+The component now also includes a **reusable low-level NVS store layer**
+(`l4_nvs_store.h` / `src/l4_nvs_store.c`) that implements the concrete
+partition init, mutex-protected read/write/erase, and JSON dump operations
+that were previously duplicated across downstream applications.
+
 Transport details (HTTP server, MQTT client, message routing) are
 **intentionally out of scope** and remain in the downstream project.
 
@@ -183,6 +188,94 @@ idf_component_register(
 
 ---
 
+## NVS store layer (`l4_nvs_store`)
+
+### Overview
+
+`l4_nvs_store.h` / `src/l4_nvs_store.c` is the reusable low-level NVS store
+layer extracted from downstream applications.  It handles:
+
+- **Partition init** — plain or encrypted (CONFIG_NVS_ENCRYPTION), with
+  automatic erase-and-reinit on `ESP_ERR_NVS_NO_FREE_PAGES` /
+  `ESP_ERR_NVS_NEW_VERSION_FOUND`.
+- **Lazy init** — the first call that opens a namespace triggers partition
+  init automatically on `ESP_ERR_NVS_NOT_INITIALIZED`.
+- **Mutex protection** — a single FreeRTOS mutex serialises all NVS
+  open/read/write/enumerate operations.
+- **Typed reads**: `read_u8`, `read_i32`, `read_u32`, `read_str`.
+- **Typed writes**: `set_str`, `set_number` (dispatches to the correct
+  `nvs_set_*` variant for `i8`/`u8`/`i16`/`u16`/`i32`/`u32`).
+- **DB convenience helpers**: `get_str_from_db`, `get_u32_from_db`.
+- **JSON namespace dump** (`get_json`) — iterates all supported-type entries
+  in a namespace and returns a heap-allocated `[{"k":…,"t":…,"v":…}]` string.
+  Protected by `CONFIG_L4_NVS_STORE_MAX_ENTRIES` (default 512).
+- **Key erase**: `erase_key`.
+
+### Partition model
+
+Four logical partitions are identified by `l4_nvs_handler_partition_t`
+(shared with `l4_nvs_handler`):
+
+| Enum                        | Default NVS label | Config key                           |
+|-----------------------------|-------------------|--------------------------------------|
+| `L4_NVS_HANDLER_PART_FACTORY` | `fctry`         | `CONFIG_L4_NVS_STORE_PART_LABEL_FACTORY` |
+| `L4_NVS_HANDLER_PART_CFG`     | `cfg`           | `CONFIG_L4_NVS_STORE_PART_LABEL_CFG`    |
+| `L4_NVS_HANDLER_PART_DB`      | `db1`           | `CONFIG_L4_NVS_STORE_PART_LABEL_DB`     |
+| `L4_NVS_HANDLER_PART_LOG`     | `log`           | `CONFIG_L4_NVS_STORE_PART_LABEL_LOG`    |
+
+Recognised `partition_from_str` aliases:
+
+- `"factory"`, `"fctry"` → `L4_NVS_HANDLER_PART_FACTORY`
+- `"cfg"` → `L4_NVS_HANDLER_PART_CFG`
+- `"db"`, `"db1"` → `L4_NVS_HANDLER_PART_DB`
+- `"log"` → `L4_NVS_HANDLER_PART_LOG`
+
+### Quick start — using the built-in store backend
+
+```c
+#include "l4_nvs_store.h"
+
+void app_main(void)
+{
+    // Register materializers first (if any), then:
+    l4_nvs_handler_init_with_store_backend();
+
+    // Now l4_nvs_handler_set_records / l4_nvs_handler_get_records work.
+    // You can also call the store API directly:
+    uint32_t val = 0;
+    l4_nvs_store_read_u32(L4_NVS_HANDLER_PART_DB, "runtime", "counter", &val);
+}
+```
+
+### Migration path from a custom backend
+
+If your project already defines a custom `l4_nvs_handler_backend_t`, you can
+replace the boilerplate callbacks with the store layer at your own pace:
+
+```c
+// Before: full custom backend
+static const l4_nvs_handler_backend_t s_backend = {
+    .partition_from_str = my_partition_from_str,  // 20+ lines
+    .set_str            = my_set_str,             // 10+ lines each
+    .set_number         = my_set_number,
+    .erase_key          = my_erase_key,
+    .get_json           = my_get_json,
+};
+
+// After: one call
+l4_nvs_handler_init_with_store_backend();
+```
+
+Downstream app-specific materializers remain in the application:
+
+```c
+l4_nvs_handler_register_namespace_materializer(
+    "cfg_wifi", my_cfg_wifi_materialize, NULL);
+l4_nvs_handler_init_with_store_backend();
+```
+
+---
+
 ## What is intentionally out of scope
 
 - HTTP server or HTTP request handlers
@@ -190,19 +283,31 @@ idf_component_register(
 - Task or message-queue parsers
 - Any app-specific namespace names, defaults, or schemas
 - Any project-specific headers (e.g. application NVS drivers, config repo headers, or third-party client headers)
+- `catalog_store.c` / raw db1 flash catalog persistence
 
 ---
 
 ## CMake dependency
 
-The component depends on ESP-IDF `json` (cJSON) and `nvs_flash` (for NVS
-error definitions used by the handler). This is declared in `CMakeLists.txt`
-and requires no manual configuration.
+The component depends on ESP-IDF `json` (cJSON), `nvs_flash`, and `freertos`.
+This is declared in `CMakeLists.txt` and requires no manual configuration.
 
 ---
 
 ## Kconfig options
 
+### L4 NVS Handler
+
 | Option | Default | Description |
 |--------|---------|-------------|
 | `CONFIG_L4_NVS_HANDLER_MAX_MATERIALIZERS` | 8 | Size of the materializer registration table |
+
+### L4 NVS Store
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `CONFIG_L4_NVS_STORE_PART_LABEL_FACTORY` | `fctry` | Flash partition label for factory partition |
+| `CONFIG_L4_NVS_STORE_PART_LABEL_CFG`     | `cfg`   | Flash partition label for config partition |
+| `CONFIG_L4_NVS_STORE_PART_LABEL_DB`      | `db1`   | Flash partition label for database partition |
+| `CONFIG_L4_NVS_STORE_PART_LABEL_LOG`     | `log`   | Flash partition label for log partition |
+| `CONFIG_L4_NVS_STORE_MAX_ENTRIES`         | 512     | Max NVS entries processed per JSON dump |
