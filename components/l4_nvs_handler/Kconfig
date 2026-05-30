@@ -1,0 +1,12 @@
+menu "L4 NVS Handler"
+
+    config L4_NVS_HANDLER_MAX_MATERIALIZERS
+        int "Maximum number of namespace materializers"
+        default 8
+        range 1 32
+        help
+            Sets the size of the static table used to store registered namespace
+            materializer callbacks. Each registered materializer occupies one slot.
+            Increase this value if more than 8 namespace materializers are needed.
+
+endmenu

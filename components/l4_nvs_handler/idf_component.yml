@@ -1,0 +1,4 @@
+version: "0.1.0"
+description: "Generic NVS record handler component for ESP-IDF 5.x projects"
+license: "MIT"
+url: "https://github.com/OlegLebedevRU/l4-esp-idf-components"

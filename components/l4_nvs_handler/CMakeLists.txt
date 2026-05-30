@@ -1,0 +1,8 @@
+idf_component_register(
+    SRCS
+        "src/l4_nvs_handler.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        json
+)
