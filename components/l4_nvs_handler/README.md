@@ -195,8 +195,9 @@ idf_component_register(
 
 ## CMake dependency
 
-The component depends on the ESP-IDF `json` component (cJSON).  This is
-declared in `CMakeLists.txt` and requires no manual configuration.
+The component depends on ESP-IDF `json` (cJSON) and `nvs_flash` (for NVS
+error definitions used by the handler). This is declared in `CMakeLists.txt`
+and requires no manual configuration.
 
 ---
 
