@@ -59,13 +59,16 @@ static void ensure_mutex(void)
     }
 }
 
+/* Milliseconds to wait for the store mutex before returning ESP_ERR_TIMEOUT */
+#define STORE_MUTEX_TIMEOUT_MS  5000
+
 static bool store_lock(void)
 {
     ensure_mutex();
     if (s_mutex == NULL) {
         return false;
     }
-    return xSemaphoreTake(s_mutex, pdMS_TO_TICKS(5000)) == pdTRUE;
+    return xSemaphoreTake(s_mutex, pdMS_TO_TICKS(STORE_MUTEX_TIMEOUT_MS)) == pdTRUE;
 }
 
 static void store_unlock(void)
@@ -479,6 +482,33 @@ static const char *nvs_type_to_str(nvs_type_t type)
  * Returns true if the entry was successfully appended, false on error or if
  * the type is unsupported (entry is silently skipped in that case).
  */
+
+/**
+ * Read a numeric NVS entry as a double.
+ *
+ * Dispatches to the appropriate nvs_get_* variant.  All integral types up to
+ * 32 bits are exactly representable as double (53-bit mantissa; 2^32 < 2^53).
+ *
+ * @param[in]  h    Open NVS handle.
+ * @param[in]  type NVS type (NVS_TYPE_I8 … NVS_TYPE_U32; not NVS_TYPE_STR).
+ * @param[in]  key  NVS key to read.
+ * @param[out] out  Receives the value on success.
+ * @return ESP_OK on success, ESP_ERR_INVALID_ARG for unsupported types.
+ */
+static esp_err_t read_nvs_numeric_as_double(nvs_handle_t h, nvs_type_t type,
+                                             const char *key, double *out)
+{
+    switch (type) {
+    case NVS_TYPE_I8:  { int8_t   v = 0; esp_err_t e = nvs_get_i8(h,  key, &v); *out = (double)v; return e; }
+    case NVS_TYPE_U8:  { uint8_t  v = 0; esp_err_t e = nvs_get_u8(h,  key, &v); *out = (double)v; return e; }
+    case NVS_TYPE_I16: { int16_t  v = 0; esp_err_t e = nvs_get_i16(h, key, &v); *out = (double)v; return e; }
+    case NVS_TYPE_U16: { uint16_t v = 0; esp_err_t e = nvs_get_u16(h, key, &v); *out = (double)v; return e; }
+    case NVS_TYPE_I32: { int32_t  v = 0; esp_err_t e = nvs_get_i32(h, key, &v); *out = (double)v; return e; }
+    case NVS_TYPE_U32: { uint32_t v = 0; esp_err_t e = nvs_get_u32(h, key, &v); *out = (double)v; return e; }
+    default:           return ESP_ERR_INVALID_ARG;
+    }
+}
+
 static bool append_entry(cJSON *arr,
                           nvs_handle_t h,
                           const nvs_entry_info_t *info)
@@ -510,21 +540,8 @@ static bool append_entry(cJSON *arr,
             }
         }
     } else {
-        /* Numeric type: read and add as JSON number */
         double num = 0.0;
-        esp_err_t read_err = ESP_FAIL;
-
-        switch (info->type) {
-        case NVS_TYPE_I8:  { int8_t   v = 0; read_err = nvs_get_i8(h,  info->key, &v); num = (double)v; } break;
-        case NVS_TYPE_U8:  { uint8_t  v = 0; read_err = nvs_get_u8(h,  info->key, &v); num = (double)v; } break;
-        case NVS_TYPE_I16: { int16_t  v = 0; read_err = nvs_get_i16(h, info->key, &v); num = (double)v; } break;
-        case NVS_TYPE_U16: { uint16_t v = 0; read_err = nvs_get_u16(h, info->key, &v); num = (double)v; } break;
-        case NVS_TYPE_I32: { int32_t  v = 0; read_err = nvs_get_i32(h, info->key, &v); num = (double)v; } break;
-        /* All uint32_t values fit exactly in double (53-bit mantissa; 2^32 < 2^53). */
-        case NVS_TYPE_U32: { uint32_t v = 0; read_err = nvs_get_u32(h, info->key, &v); num = (double)v; } break;
-        default: break;
-        }
-        if (read_err == ESP_OK) {
+        if (read_nvs_numeric_as_double(h, info->type, info->key, &num) == ESP_OK) {
             cJSON_AddNumberToObject(obj, "v", num);
             value_added = true;
         }
