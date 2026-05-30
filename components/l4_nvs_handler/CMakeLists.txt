@@ -1,9 +1,11 @@
 idf_component_register(
     SRCS
         "src/l4_nvs_handler.c"
+        "src/l4_nvs_store.c"
     INCLUDE_DIRS
         "include"
     REQUIRES
         json
         nvs_flash
+        freertos
 )
