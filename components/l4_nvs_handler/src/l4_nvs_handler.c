@@ -14,6 +14,7 @@
 #include <limits.h>
 
 #include "esp_log.h"
+#include "nvs.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "l4_nvs_handler";
